@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>留言后台</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;min-height:100%}
+  body{background:#0b1218;background-image:radial-gradient(120% 70% at 50% 0%,#17232e 0%,#0b1218 60%);
+    color:#ece8e1;font-family:"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    font-size:14px;line-height:1.7;padding:18px 16px 60px}
+  .num{font-family:"Bahnschrift","DIN Alternate","Barlow Condensed",Impact,sans-serif;font-variant-numeric:tabular-nums}
+  .wrap{max-width:820px;margin:0 auto}
+  h1{margin:0 0 4px;font-size:19px;letter-spacing:.5px}
+  h1 span{color:#ffd166}
+  .sub{color:#8b9aa8;font-size:12px;margin-bottom:16px}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+  button{font-family:inherit;font-size:12.5px;font-weight:600;color:#ece8e1;cursor:pointer;
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);border-radius:9px;
+    padding:7px 13px;transition:background .2s,transform .12s}
+  button:active{transform:scale(.97)}
+  button:hover{background:rgba(255,255,255,.12)}
+  button.on{background:linear-gradient(135deg,#2fbf71,#3fc3d6);border-color:transparent;color:#fff}
+  button.danger:hover{background:rgba(255,70,85,.22);border-color:rgba(255,70,85,.4)}
+  .status{font-size:11.5px;color:#7f8f9d;margin-left:auto}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px}
+  .stat{border-radius:12px;padding:13px 14px;background:rgba(255,255,255,.045);
+    border:1px solid rgba(255,255,255,.08)}
+  .stat .k{font-size:11px;color:#93a3b1;letter-spacing:.5px}
+  .stat .v{font-size:26px;font-weight:800;margin-top:3px;line-height:1.25;color:#ffd166}
+  .stat.m .v{color:#a8e6ff}
+  .stat.t .v{font-size:15px;color:#dfe6ec;font-weight:700;padding-top:7px}
+  h2{font-size:12.5px;color:#8b9aa8;letter-spacing:.8px;margin:24px 0 10px;
+    border-top:1px solid rgba(255,255,255,.08);padding-top:16px}
+  .item{position:relative;border-radius:12px;padding:12px 14px 11px;margin-bottom:9px;
+    background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);
+    animation:fadeIn .35s ease}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+  .item .txt{font-size:14px;line-height:1.78;word-break:break-word;white-space:pre-wrap}
+  .item .meta{margin-top:7px;font-size:10.5px;color:#6f8090;display:flex;flex-wrap:wrap;gap:9px}
+  .tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;
+    margin-right:7px;vertical-align:1.5px}
+  .tag.msg{background:rgba(77,208,225,.16);color:#7fe3f2;border:1px solid rgba(77,208,225,.35)}
+  .tag.fav{background:rgba(255,209,102,.16);color:#ffdd8a;border:1px solid rgba(255,209,102,.35)}
+  .tag.sys{background:rgba(160,92,245,.16);color:#c9aaff;border:1px solid rgba(160,92,245,.35)}
+  .item.sys{background:rgba(160,92,245,.07);border-color:rgba(160,92,245,.22)}
+  .empty{color:#63727f;font-size:12.5px;padding:14px;text-align:center;
+    border:1px dashed rgba(255,255,255,.12);border-radius:12px}
+  .note{margin-top:26px;font-size:11.5px;color:#7f8f9d;line-height:1.95;
+    background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:13px 15px}
+  .note b{color:#cfd8e0}
+  .note code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:5px;font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>留言后台 <span>· 贤者我是小猫o米</span></h1>
+  <div class="sub">对方在「好友」页写的话、点过的好感度，都会汇总到这里。</div>
+
+  <div class="bar">
+    <button id="btnRefresh">立即刷新</button>
+    <button id="btnAuto" class="on">自动刷新 开</button>
+    <button id="btnCopy">复制全部</button>
+    <button id="btnCsv">导出 CSV</button>
+    <button id="btnRaw">打开原始通道</button>
+    <button id="btnClear" class="danger">清空本地归档</button>
+    <span class="status" id="status">初始化…</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">收到留言</div><div class="v"><span id="sMsg" class="num">0</span> 条</div></div>
+    <div class="stat"><div class="k">好感度累计</div><div class="v"><span id="sFav" class="num">0</span></div></div>
+    <div class="stat m"><div class="k">对方屏幕上显示</div><div class="v"><span id="sTotal" class="num">0</span></div></div>
+    <div class="stat t"><div class="k">最后一条</div><div class="v" id="sLast">—</div></div>
+  </div>
+
+  <h2>留言列表</h2>
+  <div id="list"><div class="empty">还没有收到留言</div></div>
+
+  <h2>好感度记录</h2>
+  <div id="favList"><div class="empty">还没有好感度记录</div></div>
+
+  <div class="note">
+    <b>说明</b><br>
+    1. 数据走免注册消息通道，服务端只保留 <b>12 小时</b>；本页每 5 秒拉取一次，<b>拉到就存进本机浏览器</b>，所以建议收藏本页、并让它开着（或当天来看一眼），记录就不会丢。<br>
+    2. 好感度累计 = 对方按过的所有 <code>+1 / +999</code> 之和；「对方屏幕上显示」= 他手机上那个数。<br>
+    3. 想核对原始数据，点「打开原始通道」看服务端原文。
+  </div>
+</div>
+
+<script>
+const MQ_TOPIC = "wsqs-birthday-1010-9c4f2a";
+const MQ_RAW   = "https://ntfy.sh/" + MQ_TOPIC;
+const ARCH_KEY = "wsqs_admin_archive_v2";
+
+let arch = {};
+try { arch = JSON.parse(localStorage.getItem(ARCH_KEY) || "{}") || {}; } catch(e){ arch = {}; }
+let auto = true, timer = null, polling = false;
+
+const $ = id => document.getElementById(id);
+const pad = n => (n < 10 ? "0" : "") + n;
+function timeStr(ms){
+  const d = new Date(ms);
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " +
+         pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+}
+function esc(s){
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function save(){ try{ localStorage.setItem(ARCH_KEY, JSON.stringify(arch)); }catch(e){} }
+function rows(){
+  return Object.keys(arch).map(k => arch[k]).sort((a, b) => (b.ts || b.recv || 0) - (a.ts || a.recv || 0));
+}
+function setStatus(t){ $("status").textContent = t; }
+
+async function poll(){
+  if (polling) return;
+  polling = true;
+  try{
+    const r = await fetch(MQ_RAW + "/json?poll=1&since=all", { cache: "no-store" });
+    const text = await r.text();
+    let added = 0;
+    text.split("\n").forEach(line => {
+      line = line.trim();
+      if (!line) return;
+      let o; try { o = JSON.parse(line); } catch(e){ return; }
+      if (o.event !== "message") return;
+      let p; try { p = JSON.parse(o.message); } catch(e){ p = { t: "msg", txt: o.message }; }
+      const key = p.uid || o.id;
+      if (arch[key]) return;
+      p.key = key; p.ntfyId = o.id; p.recv = (o.time || 0) * 1000;
+      arch[key] = p;
+      added++;
+    });
+    if (added) save();
+    render();
+    setStatus(added ? ("刚收到 " + added + " 条 · " + timeStr(Date.now())) : ("已是最新 · " + timeStr(Date.now())));
+  }catch(e){
+    setStatus("连接失败，5 秒后自动重试");
+  }
+  polling = false;
+}
+
+function render(){
+  const all = rows();
+  const msgs = all.filter(r => r.t === "msg");
+  const favs = all.filter(r => r.t === "fav");
+  const sum = favs.reduce((a, b) => a + (Number(b.d) || 0), 0);
+  const shown = favs.reduce((a, b) => Math.max(a, Number(b.total) || 0), 0);
+
+  $("sMsg").textContent = msgs.length;
+  $("sFav").textContent = sum.toLocaleString("en-US");
+  $("sTotal").textContent = shown.toLocaleString("en-US");
+  $("sLast").textContent = all.length ? timeStr(all[0].ts || all[0].recv) : "—";
+
+  const notes = all.filter(r => r.t === "msg" || r.t === "sys");
+  $("list").innerHTML = notes.length ? notes.map(m => `
+    <div class="item${m.t === "sys" ? " sys" : ""}">
+      <div class="txt"><span class="tag ${m.t === "sys" ? "sys" : "msg"}">${m.t === "sys" ? "系统" : "留言"}</span>${esc(m.txt || "")}</div>
+      <div class="meta"><span>${timeStr(m.ts || m.recv)}</span><span>设备 ${esc(m.dev || "?")}</span></div>
+    </div>`).join("") : '<div class="empty">还没有收到留言</div>';
+
+  $("favList").innerHTML = favs.length ? favs.map(f => `
+    <div class="item">
+      <div class="txt"><span class="tag fav">好感度</span>+${esc(f.d)}　（累计 ${Number(f.total || 0).toLocaleString("en-US")}）</div>
+      <div class="meta"><span>${timeStr(f.ts || f.recv)}</span><span>设备 ${esc(f.dev || "?")}</span></div>
+    </div>`).join("") : '<div class="empty">还没有好感度记录</div>';
+}
+
+function plain(){
+  const all = rows(), msgs = all.filter(r => r.t === "msg"), favs = all.filter(r => r.t === "fav");
+  let out = "【留言后台导出】" + timeStr(Date.now()) + "\n";
+  out += "留言 " + msgs.length + " 条；好感度累计 " + favs.reduce((a, b) => a + (Number(b.d) || 0), 0) + "\n\n";
+  msgs.slice().reverse().forEach(m => { out += "[" + timeStr(m.ts || m.recv) + "] " + (m.txt || "") + "\n"; });
+  out += "\n--- 好感度记录 ---\n";
+  favs.slice().reverse().forEach(f => { out += "[" + timeStr(f.ts || f.recv) + "] +" + f.d + " → " + f.total + "\n"; });
+  return out;
+}
+
+/* ---------- 按钮 ---------- */
+$("btnRefresh").onclick = poll;
+$("btnAuto").onclick = function(){
+  auto = !auto;
+  this.textContent = "自动刷新 " + (auto ? "开" : "关");
+  this.classList.toggle("on", auto);
+  if (auto) timer = setInterval(poll, 5000); else clearInterval(timer);
+};
+$("btnRaw").onclick = () => window.open(MQ_RAW, "_blank");
+$("btnCopy").onclick = function(){
+  const t = plain();
+  const done = () => { this.textContent = "已复制 ✓"; setTimeout(() => this.textContent = "复制全部", 1600); };
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(done, () => fallback(t, this, done));
+  } else fallback(t, this, done);
+};
+function fallback(t, btn, done){
+  const ta = document.createElement("textarea");
+  ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); done(); } catch(e){ alert("复制失败，请手动选中列表内容"); }
+  ta.remove();
+}
+$("btnCsv").onclick = function(){
+  const all = rows().slice().reverse();
+  const lines = [["时间", "类型", "内容", "增量", "累计", "设备"]];
+  all.forEach(r => lines.push([
+    timeStr(r.ts || r.recv), r.t === "msg" ? "留言" : "好感度",
+    (r.txt || "").replace(/"/g, '""'), r.d == null ? "" : r.d, r.total == null ? "" : r.total, r.dev || ""
+  ].map(v => '"' + String(v).replace(/\r?\n/g, " ") + '"').join(",")));
+  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "留言记录_" + timeStr(Date.now()).replace(/[: ]/g, "-") + ".csv";
+  a.click();
+};
+$("btnClear").onclick = function(){
+  if (!confirm("清空本机归档？（服务端 12 小时内还能重新拉回来）")) return;
+  arch = {}; save(); render(); setStatus("已清空本地归档");
+};
+
+render();
+poll();
+timer = setInterval(poll, 5000);
+</script>
+</body>
+</html>
