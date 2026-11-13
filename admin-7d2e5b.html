@@ -64,7 +64,7 @@
     <button id="btnAuto" class="on">自动刷新 开</button>
     <button id="btnCopy">复制全部</button>
     <button id="btnCsv">导出 CSV</button>
-    <button id="btnRaw">打开原始通道</button>
+    <button id="btnRaw">打开云端数据</button>
     <button id="btnClear" class="danger">清空本地归档</button>
     <span class="status" id="status">初始化…</span>
   </div>
@@ -84,20 +84,22 @@
 
   <div class="note">
     <b>说明</b><br>
-    1. 数据走免注册消息通道，服务端只保留 <b>12 小时</b>；本页每 5 秒拉取一次，<b>拉到就存进本机浏览器</b>，所以建议收藏本页、并让它开着（或当天来看一眼），记录就不会丢。<br>
-    2. 好感度累计 = 对方按过的所有 <code>+1 / +999</code> 之和；「对方屏幕上显示」= 他手机上那个数。<br>
-    3. 想核对原始数据，点「打开原始通道」看服务端原文。
+    1. 留言和好感度都直接存进<b>云端数据库</b>，<b>永久保存</b>，不再有 12 小时过期；换手机、清浏览器缓存都不会丢。<br>
+    2. 本页每 30 秒自动同步一次（切到后台会自动暂停）；同时会把见过的记录<b>额外备份一份到本机浏览器</b>，云端万一连不上也能看。<br>
+    3. 好感度累计 = 对方按过的所有 <code>+1 / +999</code> 之和；「对方屏幕上显示」= 他手机上那个数。
   </div>
 </div>
 
 <script>
-const MQ_TOPIC = "wsqs-birthday-1010-9c4f2a";
-const MQ_RAW   = "https://ntfy.sh/" + MQ_TOPIC;
-const ARCH_KEY = "wsqs_admin_archive_v2";
+const CLOUD_BIN = "6af67b8cac6210605a83f356";
+const CLOUD_KEY = "$2a$10$qpY3radoCGdAA4DG3xtnV.NJYt0oN/awBN/RKRDLle.yFjFexQJfG";
+const CLOUD_URL = "https://api.jsonbin.io/v3/b/" + CLOUD_BIN;
+const BK_KEY    = "wsqs_admin_backup_v3";
 
-let arch = {};
-try { arch = JSON.parse(localStorage.getItem(ARCH_KEY) || "{}") || {}; } catch(e){ arch = {}; }
-let auto = true, timer = null, polling = false;
+let data = { msgs: [], fav: 0 };
+let bk = {};
+try { bk = JSON.parse(localStorage.getItem(BK_KEY) || "{}") || {}; } catch(e){ bk = {}; }
+let auto = true, timer = null, busy = false;
 
 const $ = id => document.getElementById(id);
 const pad = n => (n < 10 ? "0" : "") + n;
@@ -109,38 +111,39 @@ function timeStr(ms){
 function esc(s){
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
-function save(){ try{ localStorage.setItem(ARCH_KEY, JSON.stringify(arch)); }catch(e){} }
+function save(){ try{ localStorage.setItem(BK_KEY, JSON.stringify(bk)); }catch(e){} }
+/* 把云端记录并进本机备份（云端万一出问题，这里还有一份） */
+function mergeBackup(msgs){
+  let added = 0;
+  msgs.forEach(function(m){
+    const k = m.uid || (m.ts + "-" + (m.txt || "").slice(0, 12));
+    if (!bk[k]){ bk[k] = m; added++; }
+  });
+  if (added) save();
+  return added;
+}
 function rows(){
-  return Object.keys(arch).map(k => arch[k]).sort((a, b) => (b.ts || b.recv || 0) - (a.ts || a.recv || 0));
+  return Object.keys(bk).map(k => bk[k]).sort((a, b) => (b.ts || 0) - (a.ts || 0));
 }
 function setStatus(t){ $("status").textContent = t; }
 
-async function poll(){
-  if (polling) return;
-  polling = true;
+async function pull(){
+  if (busy) return;
+  busy = true;
   try{
-    const r = await fetch(MQ_RAW + "/json?poll=1&since=all", { cache: "no-store" });
-    const text = await r.text();
-    let added = 0;
-    text.split("\n").forEach(line => {
-      line = line.trim();
-      if (!line) return;
-      let o; try { o = JSON.parse(line); } catch(e){ return; }
-      if (o.event !== "message") return;
-      let p; try { p = JSON.parse(o.message); } catch(e){ p = { t: "msg", txt: o.message }; }
-      const key = p.uid || o.id;
-      if (arch[key]) return;
-      p.key = key; p.ntfyId = o.id; p.recv = (o.time || 0) * 1000;
-      arch[key] = p;
-      added++;
-    });
-    if (added) save();
+    const r = await fetch(CLOUD_URL + "/latest", { headers: { "X-Master-Key": CLOUD_KEY }, cache: "no-store" });
+    if (!r.ok) throw new Error("cloud " + r.status);
+    const j = await r.json();
+    const rec = (j && j.record) || {};
+    data = { msgs: Array.isArray(rec.msgs) ? rec.msgs : [], fav: Number(rec.fav) || 0 };
+    const added = mergeBackup(data.msgs);
     render();
-    setStatus(added ? ("刚收到 " + added + " 条 · " + timeStr(Date.now())) : ("已是最新 · " + timeStr(Date.now())));
+    setStatus(added ? ("云端又收到 " + added + " 条 · " + timeStr(Date.now())) : ("云端已同步 · " + timeStr(Date.now())));
   }catch(e){
-    setStatus("连接失败，5 秒后自动重试");
+    render();
+    setStatus("云端连接失败，正在显示本机备份 · " + timeStr(Date.now()));
   }
-  polling = false;
+  busy = false;
 }
 
 function render(){
@@ -148,24 +151,24 @@ function render(){
   const msgs = all.filter(r => r.t === "msg");
   const favs = all.filter(r => r.t === "fav");
   const sum = favs.reduce((a, b) => a + (Number(b.d) || 0), 0);
-  const shown = favs.reduce((a, b) => Math.max(a, Number(b.total) || 0), 0);
+  const shown = Number(data.fav) || favs.reduce((a, b) => Math.max(a, Number(b.total) || 0), 0);
 
   $("sMsg").textContent = msgs.length;
   $("sFav").textContent = sum.toLocaleString("en-US");
   $("sTotal").textContent = shown.toLocaleString("en-US");
-  $("sLast").textContent = all.length ? timeStr(all[0].ts || all[0].recv) : "—";
+  $("sLast").textContent = all.length ? timeStr(all[0].ts || 0) : "—";
 
   const notes = all.filter(r => r.t === "msg" || r.t === "sys");
   $("list").innerHTML = notes.length ? notes.map(m => `
     <div class="item${m.t === "sys" ? " sys" : ""}">
       <div class="txt"><span class="tag ${m.t === "sys" ? "sys" : "msg"}">${m.t === "sys" ? "系统" : "留言"}</span>${esc(m.txt || "")}</div>
-      <div class="meta"><span>${timeStr(m.ts || m.recv)}</span><span>设备 ${esc(m.dev || "?")}</span></div>
+      <div class="meta"><span>${timeStr(m.ts || 0)}</span><span>设备 ${esc(m.dev || "?")}</span></div>
     </div>`).join("") : '<div class="empty">还没有收到留言</div>';
 
   $("favList").innerHTML = favs.length ? favs.map(f => `
     <div class="item">
       <div class="txt"><span class="tag fav">好感度</span>+${esc(f.d)}　（累计 ${Number(f.total || 0).toLocaleString("en-US")}）</div>
-      <div class="meta"><span>${timeStr(f.ts || f.recv)}</span><span>设备 ${esc(f.dev || "?")}</span></div>
+      <div class="meta"><span>${timeStr(f.ts || 0)}</span><span>设备 ${esc(f.dev || "?")}</span></div>
     </div>`).join("") : '<div class="empty">还没有好感度记录</div>';
 }
 
@@ -173,21 +176,32 @@ function plain(){
   const all = rows(), msgs = all.filter(r => r.t === "msg"), favs = all.filter(r => r.t === "fav");
   let out = "【留言后台导出】" + timeStr(Date.now()) + "\n";
   out += "留言 " + msgs.length + " 条；好感度累计 " + favs.reduce((a, b) => a + (Number(b.d) || 0), 0) + "\n\n";
-  msgs.slice().reverse().forEach(m => { out += "[" + timeStr(m.ts || m.recv) + "] " + (m.txt || "") + "\n"; });
+  msgs.slice().reverse().forEach(m => { out += "[" + timeStr(m.ts || 0) + "] " + (m.txt || "") + "\n"; });
   out += "\n--- 好感度记录 ---\n";
-  favs.slice().reverse().forEach(f => { out += "[" + timeStr(f.ts || f.recv) + "] +" + f.d + " → " + f.total + "\n"; });
+  favs.slice().reverse().forEach(f => { out += "[" + timeStr(f.ts || 0) + "] +" + f.d + " → " + f.total + "\n"; });
   return out;
 }
 
 /* ---------- 按钮 ---------- */
-$("btnRefresh").onclick = poll;
+/* 30 秒同步一次，页面切到后台时自动暂停，省请求次数 */
+function startTimer(){
+  clearInterval(timer);
+  timer = setInterval(function(){
+    if (!document.hidden && auto) pull();
+  }, 30000);
+}
+document.addEventListener("visibilitychange", function(){
+  if (!document.hidden && auto) pull();
+});
+
+$("btnRefresh").onclick = pull;
 $("btnAuto").onclick = function(){
   auto = !auto;
   this.textContent = "自动刷新 " + (auto ? "开" : "关");
   this.classList.toggle("on", auto);
-  if (auto) timer = setInterval(poll, 5000); else clearInterval(timer);
+  if (auto) startTimer(); else clearInterval(timer);
 };
-$("btnRaw").onclick = () => window.open(MQ_RAW, "_blank");
+$("btnRaw").onclick = () => window.open("https://jsonbin.io/app/bins", "_blank");
 $("btnCopy").onclick = function(){
   const t = plain();
   const done = () => { this.textContent = "已复制 ✓"; setTimeout(() => this.textContent = "复制全部", 1600); };
@@ -206,7 +220,7 @@ $("btnCsv").onclick = function(){
   const all = rows().slice().reverse();
   const lines = [["时间", "类型", "内容", "增量", "累计", "设备"]];
   all.forEach(r => lines.push([
-    timeStr(r.ts || r.recv), r.t === "msg" ? "留言" : "好感度",
+    timeStr(r.ts || 0), r.t === "msg" ? "留言" : "好感度",
     (r.txt || "").replace(/"/g, '""'), r.d == null ? "" : r.d, r.total == null ? "" : r.total, r.dev || ""
   ].map(v => '"' + String(v).replace(/\r?\n/g, " ") + '"').join(",")));
   const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
@@ -216,13 +230,13 @@ $("btnCsv").onclick = function(){
   a.click();
 };
 $("btnClear").onclick = function(){
-  if (!confirm("清空本机归档？（服务端 12 小时内还能重新拉回来）")) return;
-  arch = {}; save(); render(); setStatus("已清空本地归档");
+  if (!confirm("清空本机备份？云端的数据不受影响，刷新一下就会重新同步回来。")) return;
+  bk = {}; save(); render(); setStatus("已清空本机备份");
 };
 
 render();
-poll();
-timer = setInterval(poll, 5000);
+pull();
+startTimer();
 </script>
 </body>
 </html>
